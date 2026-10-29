@@ -1,0 +1,2799 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import LiviLogo from "@/components/LiviLogo";
+import confetti from "canvas-confetti";
+import {
+  INITIAL_APPLICATIONS,
+  INITIAL_APPROVED_PARTNERS,
+  INITIAL_ACTIVITY_FEED,
+  PartnerApplication,
+  ApprovedPartner,
+  ReferredBusiness,
+  ReferralActivityEvent,
+  PartnerAccount,
+} from "@/data/adminData";
+import {
+  Shield,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Building,
+  Users,
+  DollarSign,
+  Award,
+  TrendingUp,
+  ExternalLink,
+  FileText,
+  Eye,
+  Check,
+  X,
+  Search,
+  Filter,
+  ArrowUpRight,
+  ChevronRight,
+  Sparkles,
+  Copy,
+  Download,
+  RefreshCw,
+  LogOut,
+  Lock,
+  Mail,
+  Phone,
+  Calendar,
+  Briefcase,
+  Tag,
+  AlertCircle,
+  EyeOff,
+  UserCheck,
+  Activity,
+  Layers,
+  ArrowLeft,
+  ChevronDown,
+  Info,
+  PlusCircle,
+  Trash2,
+  Inbox,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Send,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu,
+  ChevronLeft,
+  Compass,
+  FileCheck,
+} from "lucide-react";
+
+export default function AdminPage() {
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("admin@livileads.com");
+  const [adminPassword, setAdminPassword] = useState("admin123");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Active Tab & Sidebar Navigation
+  const [activeTab, setActiveTab] = useState<"applications" | "partners" | "activity">("applications");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Data states (clean - strictly from frontend submissions)
+  const [applications, setApplications] = useState<PartnerApplication[]>([]);
+  const [approvedPartners, setApprovedPartners] = useState<ApprovedPartner[]>([]);
+  const [activityFeed, setActivityFeed] = useState<ReferralActivityEvent[]>([]);
+
+  // Search & Filter States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Pending Review" | "Approved" | "Rejected">("all");
+  const [trackFilter, setTrackFilter] = useState<"all" | "business" | "individual">("all");
+
+  // Modals & Dialogs
+  const [selectedApp, setSelectedApp] = useState<PartnerApplication | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [appToApprove, setAppToApprove] = useState<PartnerApplication | null>(null);
+  const [appToReject, setAppToReject] = useState<PartnerApplication | null>(null);
+  const [rejectReason, setRejectReason] = useState("Incomplete corporate verification document");
+  const [rejectNotes, setRejectNotes] = useState("");
+
+  // Approval customization fields
+  const [assignedCode, setAssignedCode] = useState("");
+  const [assignedLoginId, setAssignedLoginId] = useState("");
+  const [assignedPassword, setAssignedPassword] = useState("Livi#Partner2026");
+
+  // Document Viewer Modal State
+  const [isDocViewerOpen, setIsDocViewerOpen] = useState(false);
+  const [docViewerZoom, setDocViewerZoom] = useState(100);
+
+  // Approval Email Dispatched Modal State
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [approvedEmailData, setApprovedEmailData] = useState<{
+    toEmail: string;
+    ownerName: string;
+    businessName: string;
+    applicationId: string;
+    referralCode: string;
+    referralLink: string;
+    commissionRate: number;
+    loginEmail: string;
+    loginPassword: string;
+    loginUrl: string;
+    sentAt: string;
+  } | null>(null);
+
+  // Helper to download document or verified certificate
+  const handleDownloadDoc = (app: PartnerApplication) => {
+    if (app.fileDataUrl) {
+      const a = document.createElement("a");
+      a.href = app.fileDataUrl;
+      a.download = app.fileName || `${app.businessName}_Verification_Doc.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast(`Downloading ${app.fileName}...`);
+    } else {
+      const content = `=====================================================
+LIVILEADS PARTNER LEGAL VERIFICATION SUMMARY
+=====================================================
+Application ID: ${app.id}
+Partner Business: ${app.businessName}
+Owner / Representative: ${app.ownerName}
+Partner Track: ${app.track.toUpperCase()}
+Category / Industry: ${app.category}
+Email: ${app.email}
+Phone: ${app.phone}
+Address: ${app.address || "N/A"}
+Submitted Document: ${app.fileName} (${app.documentType})
+File Size: ${(app.fileSize / (1024 * 1024)).toFixed(2)} MB
+Submission Timestamp: ${app.submittedAt}
+Verification Status: COMPLIANT & VERIFIED
+=====================================================
+Generated by LiviLeads Partner Compliance Security System
+`;
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${app.businessName.replace(/\s+/g, "_")}_Compliance_Document.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded verification summary for ${app.fileName}`);
+    }
+  };
+
+  // Selected Approved Partner for Detailed Activity View
+  const [selectedPartner, setSelectedPartner] = useState<ApprovedPartner | null>(null);
+  const [isPartnerDetailModalOpen, setIsPartnerDetailModalOpen] = useState(false);
+
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCode(id);
+    showToast(`Copied ${text} to clipboard!`);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  // Load auth state and frontend submissions from local storage
+  useEffect(() => {
+    const authStatus = localStorage.getItem("livileads_admin_authenticated");
+    if (authStatus === "true") {
+      setIsAuthenticated(true);
+    }
+
+    // Known legacy dummy IDs to purge
+    const dummyIds = [
+      "LLP-884219", "LLP-723145", "LLP-619283", "LLP-514902", "LLP-402918",
+      "PRT-9001", "PRT-9002", "PRT-9003", "PRT-9004",
+      "ACT-101", "ACT-102", "ACT-103", "ACT-104", "ACT-105"
+    ];
+
+    // Load applications submitted from frontend
+    try {
+      const storedApps = localStorage.getItem("livileads_partner_applications");
+      if (storedApps) {
+        const parsed: PartnerApplication[] = JSON.parse(storedApps);
+        const cleaned = parsed.filter((p) => !dummyIds.includes(p.id));
+        setApplications(cleaned);
+        localStorage.setItem("livileads_partner_applications", JSON.stringify(cleaned));
+      } else {
+        setApplications([]);
+      }
+    } catch {
+      setApplications([]);
+    }
+
+    // Load approved partners
+    try {
+      const storedPartners = localStorage.getItem("livileads_approved_partners");
+      if (storedPartners) {
+        const parsed: ApprovedPartner[] = JSON.parse(storedPartners);
+        const cleaned = parsed.filter((p) => !dummyIds.includes(p.id));
+        setApprovedPartners(cleaned);
+        localStorage.setItem("livileads_approved_partners", JSON.stringify(cleaned));
+      } else {
+        setApprovedPartners([]);
+      }
+    } catch {
+      setApprovedPartners([]);
+    }
+
+    // Load activity feed
+    try {
+      const storedActivity = localStorage.getItem("livileads_activity_feed");
+      if (storedActivity) {
+        const parsed: ReferralActivityEvent[] = JSON.parse(storedActivity);
+        const cleaned = parsed.filter((ev) => !dummyIds.includes(ev.id));
+        setActivityFeed(cleaned);
+        localStorage.setItem("livileads_activity_feed", JSON.stringify(cleaned));
+      } else {
+        setActivityFeed([]);
+      }
+    } catch {
+      setActivityFeed([]);
+    }
+  }, []);
+
+  // Sync applications to localStorage
+  const persistApplications = (newApps: PartnerApplication[]) => {
+    setApplications(newApps);
+    try {
+      localStorage.setItem("livileads_partner_applications", JSON.stringify(newApps));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Sync approved partners to localStorage
+  const persistApprovedPartners = (newPartners: ApprovedPartner[]) => {
+    setApprovedPartners(newPartners);
+    try {
+      localStorage.setItem("livileads_approved_partners", JSON.stringify(newPartners));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Sync activity stream to localStorage
+  const persistActivityFeed = (newFeed: ReferralActivityEvent[]) => {
+    setActivityFeed(newFeed);
+    try {
+      localStorage.setItem("livileads_activity_feed", JSON.stringify(newFeed));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Handle Admin Login
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+
+    if (!adminEmail.trim()) {
+      setLoginError("Please enter admin email.");
+      return;
+    }
+    if (!adminPassword) {
+      setLoginError("Please enter admin password.");
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setTimeout(() => {
+      setIsLoggingIn(false);
+      setIsAuthenticated(true);
+      localStorage.setItem("livileads_admin_authenticated", "true");
+      showToast(`Signed in as ${adminEmail}`);
+    }, 500);
+  };
+
+  // Quick Demo Login
+  const handleQuickDemoLogin = () => {
+    setAdminEmail("admin@livileads.com");
+    setAdminPassword("admin123");
+    setIsLoggingIn(true);
+    setTimeout(() => {
+      setIsLoggingIn(false);
+      setIsAuthenticated(true);
+      localStorage.setItem("livileads_admin_authenticated", "true");
+      showToast("Signed in as Administrator!");
+    }, 300);
+  };
+
+  // Handle Admin Logout
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem("livileads_admin_authenticated");
+    showToast("Signed out successfully.");
+  };
+
+  // Helper to generate secure random password
+  const generateRandomPassword = () => {
+    const prefixes = ["Livi#", "Partner$", "Scale@", "Lead&", "Growth#", "Livi@"];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    return `${prefix}${num}`;
+  };
+
+  // Helper to generate partner referral code
+  const generateReferralCodeFor = (name: string) => {
+    const clean = (name || "PARTNER")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 8)
+      .toUpperCase();
+    const rand = Math.floor(100 + Math.random() * 900);
+    return `LIVI-${clean || "PRT"}${rand}`;
+  };
+
+  // Helper to generate clean portal login ID
+  const generatePartnerLoginId = (name: string, email: string) => {
+    const clean = (name || email.split("@")[0] || "partner")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 10);
+    const rand = Math.floor(100 + Math.random() * 900);
+    return `${clean || "partner"}${rand}@livipartner.com`;
+  };
+
+  // Open Approval Dialog
+  const openApproveDialog = (app: PartnerApplication) => {
+    setAppToApprove(app);
+    // Generate clean partner code
+    const cleanName = app.businessName
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 8)
+      .toUpperCase();
+    setAssignedCode(`LIVI-${cleanName || "PARTNER"}`);
+    // Default login ID to applicant's email
+    setAssignedLoginId(app.email);
+    // Auto-generate fresh temporary password
+    setAssignedPassword(generateRandomPassword());
+    setIsApproveDialogOpen(true);
+  };
+
+  // Confirm Approval
+  const handleConfirmApproval = () => {
+    if (!appToApprove) return;
+
+    const rate = 20;
+    const cleanName = appToApprove.businessName
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 8)
+      .toUpperCase();
+
+    const finalCode = (assignedCode.trim() || `LIVI-${cleanName || "PARTNER"}`).toUpperCase();
+    const finalLoginId = assignedLoginId.trim() || appToApprove.email;
+    const finalPassword = assignedPassword.trim() || "Livi#Partner2026";
+
+    // 1. Update application status
+    const updatedApps = applications.map((a) =>
+      a.id === appToApprove.id
+        ? {
+            ...a,
+            status: "Approved" as const,
+            assignedCode: finalCode,
+            assignedLoginId: finalLoginId,
+            assignedPassword: finalPassword,
+          }
+        : a
+    );
+    persistApplications(updatedApps);
+
+    // 2. Add to Approved Partners list
+    const newApprovedPartner: ApprovedPartner = {
+      id: `PRT-${Math.floor(1000 + Math.random() * 9000)}`,
+      applicationId: appToApprove.id,
+      businessName: appToApprove.businessName,
+      ownerName: appToApprove.ownerName,
+      email: appToApprove.email,
+      loginId: finalLoginId,
+      tempPassword: finalPassword,
+      phone: appToApprove.phone,
+      category: appToApprove.category,
+      referralCode: finalCode,
+      referralLink: `https://livileads.com/ref/${finalCode.toLowerCase()}`,
+      commissionRate: rate,
+      approvedAt: new Date().toISOString(),
+      status: "Active",
+      totalReferredCount: 0,
+      activePayingCount: 0,
+      trialCount: 0,
+      churnedCount: 0,
+      totalEarningsUSD: 0,
+      totalLiviPoints: 0,
+      currentMonthPoints: 0,
+      availableBalancePoints: 0,
+      referredBusinesses: [],
+    };
+
+    const updatedPartners = [newApprovedPartner, ...approvedPartners];
+    persistApprovedPartners(updatedPartners);
+
+    // 3. Create & store PartnerAccount for Portal Login (/login -> /portal)
+    const newAccount: PartnerAccount = {
+      id: appToApprove.id,
+      applicationId: appToApprove.id,
+      email: appToApprove.email,
+      loginId: finalLoginId,
+      password: finalPassword,
+      businessName: appToApprove.businessName,
+      ownerName: appToApprove.ownerName,
+      phone: appToApprove.phone,
+      track: appToApprove.track,
+      commissionRate: rate,
+      referralCode: finalCode,
+      referralLink: `https://livileads.com/ref/${finalCode.toLowerCase()}`,
+      liviPoints: 0,
+      pointsValueUSD: 0,
+      totalEarningsUSD: 0,
+      currentMonthPoints: 0,
+      availableBalancePoints: 0,
+      redeemedPoints: 0,
+      joinedDate: new Date().toISOString().split("T")[0],
+      payoutDetails: {
+        bankName: "HDFC Bank",
+        accountNumber: "50100492819234",
+        accountHolder: appToApprove.ownerName,
+        ifscOrSwift: "HDFC0001234",
+        upiId: `${appToApprove.ownerName.toLowerCase().replace(/[^a-z0-9]/g, "")}@okhdfcbank`,
+        paypalEmail: appToApprove.email,
+      },
+      referredBusinesses: [],
+      redemptions: [],
+    };
+
+    try {
+      const storedAccRaw = localStorage.getItem("livileads_partner_accounts");
+      const existingAccounts: PartnerAccount[] = storedAccRaw ? JSON.parse(storedAccRaw) : [];
+      const updatedAccounts = [
+        newAccount,
+        ...existingAccounts.filter(
+          (a) =>
+            a.email.toLowerCase() !== newAccount.email.toLowerCase() &&
+            (!a.loginId || a.loginId.toLowerCase() !== newAccount.loginId?.toLowerCase())
+        ),
+      ];
+      localStorage.setItem("livileads_partner_accounts", JSON.stringify(updatedAccounts));
+    } catch (e) {
+      console.error("Failed saving partner account", e);
+    }
+
+    // 4. Add to activity stream
+    const newActivity: ReferralActivityEvent = {
+      id: `ACT-${Date.now()}`,
+      partnerName: appToApprove.businessName,
+      referredClient: "Partner Account Activated",
+      planName: `Partner Rewards (${rate}% Commission)`,
+      pointsEarned: 0,
+      usdValue: 0,
+      timestamp: "Just now",
+      type: "new_subscription",
+    };
+    persistActivityFeed([newActivity, ...activityFeed]);
+
+    setIsApproveDialogOpen(false);
+    setIsReviewModalOpen(false);
+
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.6 },
+      });
+    } catch {
+      // ignore
+    }
+
+    // 5. Open automated approval email notification modal
+    setApprovedEmailData({
+      toEmail: appToApprove.email,
+      ownerName: appToApprove.ownerName,
+      businessName: appToApprove.businessName,
+      applicationId: appToApprove.id,
+      referralCode: finalCode,
+      referralLink: `https://livileads.com/ref/${finalCode.toLowerCase()}`,
+      commissionRate: rate,
+      loginEmail: finalLoginId,
+      loginPassword: finalPassword,
+      loginUrl: `/login?email=${encodeURIComponent(finalLoginId)}&pass=${encodeURIComponent(finalPassword)}`,
+      sentAt: new Date().toLocaleTimeString(),
+    });
+    if (selectedApp && selectedApp.id === appToApprove.id) {
+      setSelectedApp({
+        ...selectedApp,
+        status: "Approved",
+        assignedCode: finalCode,
+        assignedLoginId: finalLoginId,
+        assignedPassword: finalPassword,
+      });
+    }
+    setIsEmailModalOpen(true);
+    setAppToApprove(null);
+
+    showToast(`Application approved & credentials dispatched for ${appToApprove.businessName}!`);
+  };
+
+  // Open Reject Dialog
+  const openRejectDialog = (app: PartnerApplication) => {
+    setAppToReject(app);
+    setRejectReason("Incomplete corporate verification document");
+    setRejectNotes("");
+    setIsRejectDialogOpen(true);
+  };
+
+  // Confirm Reject
+  const handleConfirmReject = () => {
+    if (!appToReject) return;
+
+    const finalNotes = rejectNotes.trim()
+      ? `${rejectReason} — Note: ${rejectNotes.trim()}`
+      : rejectReason;
+
+    const updatedApps = applications.map((a) =>
+      a.id === appToReject.id
+        ? {
+            ...a,
+            status: "Rejected" as const,
+            notes: finalNotes,
+          }
+        : a
+    );
+    persistApplications(updatedApps);
+
+    if (selectedApp && selectedApp.id === appToReject.id) {
+      setSelectedApp({
+        ...selectedApp,
+        status: "Rejected",
+        notes: finalNotes,
+      });
+    }
+
+    setIsRejectDialogOpen(false);
+    setIsReviewModalOpen(false);
+    setAppToReject(null);
+    setRejectNotes("");
+    showToast(`Application ${appToReject.id} Rejected.`);
+  };
+
+  // Filtered Applications
+  const filteredApplications = applications.filter((app) => {
+    const matchesSearch =
+      app.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.ownerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStatus = statusFilter === "all" || app.status === statusFilter;
+    const matchesTrack = trackFilter === "all" || app.track === trackFilter;
+
+    return matchesSearch && matchesStatus && matchesTrack;
+  });
+
+  // Filtered Approved Partners
+  const filteredPartners = approvedPartners.filter((partner) => {
+    const matchesSearch =
+      partner.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      partner.ownerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      partner.referralCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      partner.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+    return matchesSearch;
+  });
+
+  // KPI Calculations
+  const pendingAppsCount = applications.filter((a) => a.status === "Pending Review").length;
+  const approvedPartnersCount = approvedPartners.length;
+  const totalReferredBusinessesCount = approvedPartners.reduce(
+    (acc, p) => acc + p.totalReferredCount,
+    0
+  );
+  const totalLiviPointsDistributed = approvedPartners.reduce((acc, p) => acc + p.totalLiviPoints, 0);
+  const totalEarningsUSDDistributed = approvedPartners.reduce((acc, p) => acc + p.totalEarningsUSD, 0);
+
+  // If not logged in, render Admin Login screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden font-jakarta font-sans">
+        {/* Soft background ambient tints */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-200/40 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="w-full max-w-md relative z-10 animate-fade-in">
+          {/* Top Brand & Security Badge */}
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-bold mb-4">
+              <Shield className="w-3.5 h-3.5 text-violet-600" />
+              <span>Operations & Partner Admin Hub</span>
+            </div>
+
+            <div className="flex justify-center mb-2">
+              <LiviLogo size="lg" variant="light" showBadge={true} badgeText="Admin Console" />
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Sign in to review incoming applications and manage approved partners.
+            </p>
+          </div>
+
+          {/* Login Card */}
+          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xl backdrop-blur-xl card-hover-unified-sm">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">Administrator Login</h2>
+                <p className="text-xs text-slate-500">Authorized personnel only</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-violet-50 border border-violet-200 text-violet-600 flex items-center justify-center">
+                <Lock className="w-5 h-5" />
+              </div>
+            </div>
+
+            {loginError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Admin Email
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="admin@livileads.com"
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-2 focus:ring-violet-500/20 transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    required
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-2 focus:ring-violet-500/20 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm shadow-md hover:shadow-violet-600/20 hover:-translate-y-0.5 active:translate-y-0 transition cursor-pointer flex items-center justify-center gap-2 mt-2"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Authenticating...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Sign In to Admin Portal</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Quick Demo Pill */}
+            <div className="mt-5 pt-4 border-t border-slate-100 text-center">
+              <p className="text-[11px] text-slate-400 mb-2">Quick Access:</p>
+              <button
+                type="button"
+                onClick={handleQuickDemoLogin}
+                className="w-full py-2 px-3 rounded-lg bg-slate-100 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 text-slate-700 hover:text-violet-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-violet-600" />
+                <span>One-Click Login (admin@livileads.com)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Back to Site */}
+          <div className="text-center mt-6">
+            <Link
+              href="/"
+              className="text-xs text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 transition"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              <span>Back to Public Partner Program</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // LOGGED IN ADMIN DASHBOARD
+  return (
+    <div className="min-h-screen bg-slate-100/90 text-slate-900 flex font-jakarta font-sans">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 bg-white text-slate-900 px-4 py-3 rounded-2xl shadow-xl border border-slate-200 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <span className="text-xs font-semibold">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Mobile Drawer Overlay */}
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-xs lg:hidden animate-in fade-in duration-200"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        >
+          <div
+            className="w-72 max-w-[85vw] h-full bg-white text-slate-900 p-5 flex flex-col justify-between shadow-2xl border-r border-slate-200 animate-in slide-in-from-left duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                <Link href="/" className="flex items-center gap-2" onClick={() => setIsMobileSidebarOpen(false)}>
+                  <LiviLogo size="sm" showBadge={false} />
+                  <span className="text-xs font-black tracking-wider uppercase text-violet-700 bg-violet-50 px-2 py-0.5 rounded-md border border-violet-200">
+                    Admin
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Navigation Links */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2 block">
+                  Management
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("applications");
+                    setSelectedApp(null);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeTab === "applications" && !selectedApp
+                      ? "bg-violet-600 text-white shadow-md shadow-violet-600/20"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <FileText className="w-4 h-4" />
+                    <span>Partner Applications</span>
+                  </div>
+                  {pendingAppsCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold">
+                      {pendingAppsCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("partners");
+                    setSelectedApp(null);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeTab === "partners"
+                      ? "bg-violet-600 text-white shadow-md shadow-violet-600/20"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Users className="w-4 h-4" />
+                    <span>Approved Partners</span>
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+                    {approvedPartners.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("activity");
+                    setSelectedApp(null);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeTab === "activity"
+                      ? "bg-violet-600 text-white shadow-md shadow-violet-600/20"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Activity className="w-4 h-4" />
+                    <span>Referral Stream</span>
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-extrabold">
+                    {activityFeed.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Sidebar Footer */}
+            <div className="pt-4 border-t border-slate-100">
+
+              <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                    AD
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-800 block truncate">Admin Team</span>
+                    <span className="text-[10px] text-slate-500 block truncate">admin@livileads.com</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition cursor-pointer shrink-0"
+                  title="Log out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Expandable / Collapsible Sidebar */}
+      <aside
+        className={`hidden lg:flex flex-col justify-between border-r border-slate-200/90 bg-white text-slate-800 shrink-0 sticky top-0 h-screen transition-all duration-300 ease-in-out z-30 select-none shadow-xs ${
+          isSidebarCollapsed ? "w-20" : "w-64"
+        }`}
+      >
+        <div>
+          {/* Sidebar Top: Logo & Collapse Button */}
+          <div className="h-16 px-4 border-b border-slate-100 flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+              <LiviLogo size="sm" showBadge={false} />
+              {!isSidebarCollapsed && (
+                <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
+                  <span className="text-[10px] font-black tracking-wider uppercase text-violet-700 bg-violet-50 px-2 py-0.5 rounded border border-violet-200">
+                    Admin
+                  </span>
+                </div>
+              )}
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition cursor-pointer"
+              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen className="w-4 h-4 text-violet-600" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          {/* Sidebar Navigation */}
+          <div className="p-3 space-y-1.5">
+            {!isSidebarCollapsed && (
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 py-1 block">
+                Main Console
+              </span>
+            )}
+
+            {/* Nav 1: Applications */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("applications");
+                setSelectedApp(null);
+              }}
+              title={isSidebarCollapsed ? "Partner Applications" : undefined}
+              className={`w-full flex items-center rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer ${
+                isSidebarCollapsed
+                  ? "justify-center p-3"
+                  : "justify-between px-3.5 py-2.5"
+              } ${
+                activeTab === "applications" && !selectedApp
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/20 font-extrabold"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <FileText className={`w-4 h-4 shrink-0 ${activeTab === "applications" && !selectedApp ? "text-white" : "text-violet-600"}`} />
+                {!isSidebarCollapsed && <span>Applications</span>}
+              </div>
+              {!isSidebarCollapsed && pendingAppsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                  {pendingAppsCount}
+                </span>
+              )}
+              {isSidebarCollapsed && pendingAppsCount > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-500" />
+              )}
+            </button>
+
+            {/* Nav 2: Approved Partners */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("partners");
+                setSelectedApp(null);
+              }}
+              title={isSidebarCollapsed ? "Approved Partners" : undefined}
+              className={`w-full flex items-center rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer ${
+                isSidebarCollapsed
+                  ? "justify-center p-3"
+                  : "justify-between px-3.5 py-2.5"
+              } ${
+                activeTab === "partners"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/20 font-extrabold"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Users className={`w-4 h-4 shrink-0 ${activeTab === "partners" ? "text-white" : "text-emerald-600"}`} />
+                {!isSidebarCollapsed && <span>Approved Partners</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+                  {approvedPartners.length}
+                </span>
+              )}
+            </button>
+
+            {/* Nav 3: Live Referral Stream */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("activity");
+                setSelectedApp(null);
+              }}
+              title={isSidebarCollapsed ? "Live Referral Stream" : undefined}
+              className={`w-full flex items-center rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer ${
+                isSidebarCollapsed
+                  ? "justify-center p-3"
+                  : "justify-between px-3.5 py-2.5"
+              } ${
+                activeTab === "activity"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/20 font-extrabold"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Activity className={`w-4 h-4 shrink-0 ${activeTab === "activity" ? "text-white" : "text-blue-600"}`} />
+                {!isSidebarCollapsed && <span>Referral Stream</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-800 text-[10px] font-extrabold">
+                  {activityFeed.length}
+                </span>
+              )}
+            </button>
+
+          </div>
+        </div>
+
+        {/* Sidebar Bottom: Admin Info & Logout */}
+        <div className="p-3 border-t border-slate-100">
+
+          <div
+            className={`flex items-center bg-slate-50 rounded-xl border border-slate-200/80 ${
+              isSidebarCollapsed ? "justify-center p-2" : "justify-between p-2.5"
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                AD
+              </div>
+              {!isSidebarCollapsed && (
+                <div className="min-w-0 text-left">
+                  <span className="text-xs font-bold text-slate-800 block truncate">Admin Team</span>
+                  <span className="text-[10px] text-slate-500 block truncate">admin@livileads.com</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition cursor-pointer shrink-0"
+              title="Log out of Admin"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Right Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Top Navbar */}
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
+          <div className="px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            {/* Left: Mobile hamburger & Breadcrumb */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                title="Open Sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                className="hidden lg:flex p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+              >
+                {isSidebarCollapsed ? (
+                  <PanelLeftOpen className="w-4 h-4 text-violet-600" />
+                ) : (
+                  <PanelLeftClose className="w-4 h-4" />
+                )}
+              </button>
+
+              {/* Breadcrumb path */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-bold text-slate-400 hidden sm:inline">Admin Portal</span>
+                <span className="text-slate-300 hidden sm:inline">/</span>
+                {selectedApp ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedApp(null)}
+                      className="font-semibold text-slate-500 hover:text-violet-600 transition cursor-pointer"
+                    >
+                      Applications
+                    </button>
+                    <span className="text-slate-300">/</span>
+                    <span className="font-extrabold text-violet-700 max-w-[150px] sm:max-w-xs truncate">
+                      {selectedApp.businessName}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="font-extrabold text-slate-800">
+                    {activeTab === "applications"
+                      ? "Partner Applications"
+                      : activeTab === "partners"
+                      ? "Approved Partners & Activities"
+                      : "Live Referral Stream"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Middle: Global Search Bar (when not viewing app details) */}
+            {!selectedApp && (
+              <div className="hidden md:flex flex-1 max-w-md mx-2">
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search applications, partners, reference ID..."
+                    className="w-full pl-9 pr-4 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 transition"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Right Admin Avatar */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                AD
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Admin Container */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {selectedApp ? (
+            /* APPLICATION REVIEW IN-PAGE VIEW (NO POPUP!) */
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Back to Applications & ID Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setSelectedApp(null)}
+                  className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4 text-violet-600" />
+                  <span>Back to Applications List</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-500">
+                    Application Reference:
+                  </span>
+                  <span className="text-xs font-mono font-bold bg-slate-200/80 px-2 py-0.5 rounded-md text-slate-800">
+                    {selectedApp.id}
+                  </span>
+                </div>
+              </div>
+
+              {/* Main Card Header */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0 ${
+                      selectedApp.track === "business" ? "bg-violet-600" : "bg-blue-600"
+                    }`}
+                  >
+                    {selectedApp.track === "business" ? (
+                      <Building className="w-7 h-7" />
+                    ) : (
+                      <Users className="w-7 h-7" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                        {selectedApp.businessName}
+                      </h2>
+                      <span
+                        className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                          selectedApp.track === "business"
+                            ? "bg-violet-50 text-violet-700 border border-violet-200"
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                        }`}
+                      >
+                        {selectedApp.track === "business" ? "Business Partner Track" : "Individual Track"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Submitted on {new Date(selectedApp.submittedAt).toLocaleDateString()} at{" "}
+                      {new Date(selectedApp.submittedAt).toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status & Actions in Header */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedApp.status === "Pending Review" && (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold mr-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                        Pending Review
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openRejectDialog(selectedApp)}
+                        className="px-4 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold transition cursor-pointer"
+                      >
+                        Reject Application
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openApproveDialog(selectedApp)}
+                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md hover:shadow-emerald-600/20 transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Approve Partner</span>
+                      </button>
+                    </>
+                  )}
+                  {selectedApp.status === "Approved" && (
+                    <span className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Approved Partner</span>
+                    </span>
+                  )}
+                  {selectedApp.status === "Rejected" && (
+                    <span className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-extrabold">
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <span>Application Rejected</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Information Details Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Authorized Representative
+                  </span>
+                  <span className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-violet-600" />
+                    {selectedApp.ownerName}
+                  </span>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Work Email Address
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5 truncate">
+                    <Mail className="w-4 h-4 text-violet-600 shrink-0" />
+                    <span className="truncate">{selectedApp.email}</span>
+                  </span>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Contact Phone
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    <Phone className="w-4 h-4 text-violet-600" />
+                    {selectedApp.phone}
+                  </span>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Industry / Category
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    <Building className="w-4 h-4 text-violet-600" />
+                    {selectedApp.category}
+                  </span>
+                </div>
+              </div>
+
+              {selectedApp.address && (
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Registered Corporate Address
+                  </span>
+                  <span className="text-sm text-slate-700">{selectedApp.address}</span>
+                </div>
+              )}
+
+              {/* Submitted Verification Document Card (Clean Card, NO embedded iframe!) */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      Submitted Verification Document
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Corporate identity & registration file uploaded by applicant
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Verified Attached Document
+                  </span>
+                </div>
+
+                {/* Clean Document Card (Full Light Theme) */}
+                <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs hover:border-violet-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition">
+                  {/* Left: Document Icon, Name, Size */}
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 border border-violet-200 flex items-center justify-center shrink-0 shadow-xs">
+                      <FileText className="w-6 h-6" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 truncate max-w-md">
+                          {selectedApp.fileName}
+                        </h4>
+                        <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          {(selectedApp.fileSize / (1024 * 1024)).toFixed(2)} MB
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                        <span>Classification: <strong className="text-violet-700 font-semibold">{selectedApp.documentType}</strong></span>
+                        <span>•</span>
+                        <span className="text-emerald-600 flex items-center gap-1 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Ready for Review
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right: View Document & Download buttons */}
+                  <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                    {/* Primary: View Document Icon Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocViewerZoom(100);
+                        setIsDocViewerOpen(true);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-violet-600/20 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+                      title="View document in full-screen modal"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>View Document</span>
+                    </button>
+
+                    {/* Secondary: Download Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDoc(selectedApp)}
+                      className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      title="Download file locally"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span className="hidden sm:inline">Download</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
+                  <span>Document Type: {selectedApp.documentType}</span>
+                  <span className="text-emerald-600 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Verified by LiviLeads Compliance
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom Action Footer */}
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setSelectedApp(null)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition cursor-pointer"
+                >
+                  ← Back to Applications
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* KPI Summary Overview (Overall Admin View) */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
+          {/* Card 1: Pending Applications */}
+          <div
+            onClick={() => {
+              setActiveTab("applications");
+              setStatusFilter("Pending Review");
+            }}
+            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs card-hover-unified-sm cursor-pointer"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Pending Applications
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{pendingAppsCount}</span>
+              {pendingAppsCount > 0 ? (
+                <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  Action Required
+                </span>
+              ) : (
+                <span className="text-[11px] font-semibold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
+                  All Reviewed
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
+              {applications.length} total partner applications
+            </p>
+          </div>
+
+          {/* Card 2: Approved Business Partners */}
+          <div
+            onClick={() => {
+              setActiveTab("partners");
+            }}
+            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs card-hover-unified-sm cursor-pointer"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Approved Partners
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <UserCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{approvedPartnersCount}</span>
+              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Active Partners
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Approved from incoming submissions</p>
+          </div>
+
+          {/* Card 3: Total Referred Businesses */}
+          <div
+            onClick={() => setActiveTab("partners")}
+            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs card-hover-unified-sm cursor-pointer"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Referred Businesses
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center">
+                <Building className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                {totalReferredBusinessesCount}
+              </span>
+              <span className="text-[11px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full border border-violet-200">
+                Clients
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Brought in by approved partner referrals</p>
+          </div>
+
+          {/* Card 4: Partner Livi Points & Earnings */}
+          <div
+            onClick={() => setActiveTab("partners")}
+            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs card-hover-unified-sm cursor-pointer"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Points & Payouts
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                <Award className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                {totalLiviPointsDistributed.toLocaleString()}
+              </span>
+              <span className="text-[11px] font-bold text-emerald-600">
+                ${totalEarningsUSDDistributed.toLocaleString()} USD
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Earned across all approved partners</p>
+          </div>
+        </section>
+
+        {/* ========================================================
+            TAB 1: PARTNER APPLICATIONS & ACTIONS
+           ======================================================== */}
+        {activeTab === "applications" && (
+          <div className="space-y-4">
+            {/* Filter & Controls Bar */}
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
+                  Status:
+                </span>
+                {(["all", "Pending Review", "Approved", "Rejected"] as const).map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition cursor-pointer ${
+                      statusFilter === status
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {status === "all" ? "All Applications" : status}
+                    {status === "Pending Review" && ` (${pendingAppsCount})`}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
+                  Track:
+                </span>
+                <select
+                  value={trackFilter}
+                  onChange={(e) => setTrackFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none focus:border-violet-500"
+                >
+                  <option value="all">All Tracks</option>
+                  <option value="business">Business Partners Only</option>
+                  <option value="individual">Individual Partners Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Applications List */}
+            {applications.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs">
+                <div className="w-16 h-16 rounded-3xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-4 border border-violet-100">
+                  <Inbox className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  No Partner Applications Submitted Yet
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                  When a partner submits their details from the partner application form, it will appear here in real-time for review and approval.
+                </p>
+              </div>
+            ) : filteredApplications.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+                <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-800">No applications match your filter</h3>
+                <p className="text-xs text-slate-500 mt-1">Try clearing your search query or status filter.</p>
+                <button
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setTrackFilter("all");
+                    setSearchQuery("");
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition"
+                >
+                  Reset Filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3.5 sm:gap-4">
+                {filteredApplications.map((app) => (
+                  <div
+                    key={app.id}
+                    className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs card-hover-unified-sm transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  >
+                    {/* Left: Partner info */}
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${
+                          app.track === "business"
+                            ? "bg-violet-100 text-violet-700 border border-violet-200"
+                            : "bg-blue-100 text-blue-700 border border-blue-200"
+                        }`}
+                      >
+                        {app.track === "business" ? (
+                          <Building className="w-5 h-5" />
+                        ) : (
+                          <Users className="w-5 h-5" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+                            {app.businessName}
+                          </h4>
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              app.track === "business"
+                                ? "bg-violet-50 text-violet-700 border border-violet-200"
+                                : "bg-blue-50 text-blue-700 border border-blue-200"
+                            }`}
+                          >
+                            {app.track === "business" ? "Business Partner" : "Individual"}
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-slate-400">
+                            {app.id}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
+                          <span className="font-medium text-slate-700">Owner: {app.ownerName}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-slate-400" />
+                            {app.email}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            {app.phone}
+                          </span>
+                        </div>
+
+                        {/* Document & Category details */}
+                        <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                          <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                            Category: {app.category}
+                          </span>
+
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                            <FileText className="w-3 h-3 text-slate-500" />
+                            <span>{app.documentType}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Status & Actions */}
+                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 shrink-0">
+                      {/* Status Chip */}
+                      <div>
+                        {app.status === "Pending Review" && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                            Pending Review
+                          </span>
+                        )}
+                        {app.status === "Approved" && (
+                          <div className="text-right">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              Approved
+                            </span>
+                          </div>
+                        )}
+                        {app.status === "Rejected" && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                            Rejected
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Action button */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedApp(app);
+                          }}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
+                            app.status === "Pending Review"
+                              ? "bg-violet-600 hover:bg-violet-700 text-white shadow-violet-600/20"
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{app.status === "Pending Review" ? "Review & Action" : "View Details"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================
+            TAB 2: APPROVED BUSINESS PARTNERS & ACTIVITIES
+           ======================================================== */}
+        {activeTab === "partners" && (
+          <div className="space-y-4">
+            {/* Filter and overview banner */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Approved Business Partners Directory
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Track referrals closed, active customer subscriptions, and commission earned by approved partners.
+                </p>
+              </div>
+            </div>
+
+            {/* Approved Partners Grid */}
+            {approvedPartners.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100">
+                  <UserCheck className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  No Approved Business Partners Yet
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                  Review incoming applications in the <strong>Partner Applications</strong> tab and click <strong>Approve</strong> to activate partners here.
+                </p>
+                <button
+                  onClick={() => setActiveTab("applications")}
+                  className="mt-5 px-5 py-2.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md transition"
+                >
+                  View Partner Applications ({applications.length})
+                </button>
+              </div>
+            ) : filteredPartners.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+                <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-800">No approved partners match your search</h3>
+                <p className="text-xs text-slate-500 mt-1">Try clearing your search query.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {filteredPartners.map((partner) => (
+                  <div
+                    key={partner.id}
+                    className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs card-hover-unified-sm transition-all"
+                  >
+                    {/* Top Row: Partner Identity & Tier */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white flex items-center justify-center font-extrabold text-base shadow-sm shrink-0">
+                          {partner.businessName.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-extrabold text-slate-900">
+                              {partner.businessName}
+                            </h4>
+                            <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-200">
+                              ★ {partner.commissionRate}% Recurring Rewards
+                            </span>
+                            {partner.status === "Top Performer" && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Top Performer
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
+                            <span>Owner: <strong className="text-slate-800">{partner.ownerName}</strong></span>
+                            <span>•</span>
+                            <span>{partner.email}</span>
+                            <span>•</span>
+                            <span>{partner.phone}</span>
+                            <span>•</span>
+                            <span className="text-slate-400">Category: {partner.category}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Referral Code Chip with Copy */}
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <div className="bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-xl text-left">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Referral Code
+                          </span>
+                          <span className="font-mono text-xs font-extrabold text-violet-700">
+                            {partner.referralCode}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(partner.referralLink, partner.id)}
+                          className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-violet-100 hover:text-violet-700 text-slate-600 flex items-center justify-center transition cursor-pointer"
+                          title="Copy partner referral link"
+                        >
+                          {copiedCode === partner.id ? (
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Middle Section: Metrics Dashboard */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-4">
+                      {/* Metric 1: Businesses Referred */}
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Businesses Referred
+                        </span>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-xl font-extrabold text-slate-900">
+                            {partner.totalReferredCount}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-600">
+                            {partner.activePayingCount} paying
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {partner.trialCount} in trial • {partner.churnedCount} inactive
+                        </span>
+                      </div>
+
+                      {/* Metric 2: Lifetime Livi Points */}
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Lifetime Livi Points
+                        </span>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-xl font-extrabold text-violet-700">
+                            {partner.totalLiviPoints.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">pts</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-600 block mt-0.5">
+                          ${partner.totalEarningsUSD.toLocaleString()} USD
+                        </span>
+                      </div>
+
+                      {/* Metric 3: Current Month Earned */}
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          This Month Recurring
+                        </span>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-xl font-extrabold text-emerald-600">
+                            +{partner.currentMonthPoints.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">pts</span>
+                        </div>
+                        <span className="text-[10px] font-medium text-emerald-700 block mt-0.5">
+                          ~${(partner.currentMonthPoints / 10).toFixed(0)} recurring
+                        </span>
+                      </div>
+
+                      {/* Metric 4: Redeemable Balance */}
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Available Balance
+                        </span>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-xl font-extrabold text-slate-800">
+                            {partner.availableBalancePoints.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400">pts</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+                          Ready for payout
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Quick Referred Preview & Action */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-violet-600 shrink-0" />
+                        <span>
+                          {partner.referredBusinesses.length > 0 ? (
+                            <>
+                              Latest client referred:{" "}
+                              <strong className="text-slate-800">
+                                {partner.referredBusinesses[0].name}
+                              </strong>{" "}
+                              ({partner.referredBusinesses[0].plan})
+                            </>
+                          ) : (
+                            "Partner link active. No referrals recorded yet."
+                          )}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPartner(partner);
+                          setIsPartnerDetailModalOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:shadow-violet-600/20 transition cursor-pointer self-end sm:self-auto"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>View Referrals & Activity ({partner.totalReferredCount})</span>
+                        <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================
+            TAB 3: LIVE REFERRAL ACTIVITY STREAM
+           ======================================================== */}
+        {activeTab === "activity" && (
+          <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs space-y-5">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                Live Partner Referral & Points Stream
+              </h3>
+              <p className="text-xs text-slate-500">
+                Real-time activity audit showing subscriptions closed and points awarded to partners.
+              </p>
+            </div>
+
+            {activityFeed.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-bold text-slate-700">No Referral Activity Logged Yet</p>
+                <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                  When approved partners refer client organizations, points awards and recurring commission records will stream here.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {activityFeed.map((ev) => (
+                  <div key={ev.id} className="py-3.5 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          ev.type === "new_subscription"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : ev.type === "recurring_renewal"
+                            ? "bg-violet-100 text-violet-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {ev.type === "new_subscription" ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : ev.type === "recurring_renewal" ? (
+                          <RefreshCw className="w-4 h-4" />
+                        ) : (
+                          <Clock className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">
+                          <span className="text-violet-700">{ev.partnerName}</span> referred{" "}
+                          <span className="text-slate-800 underline decoration-slate-300">
+                            {ev.referredClient}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Plan: {ev.planName} • {ev.timestamp}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-extrabold text-emerald-600 block">
+                        +{ev.pointsEarned.toLocaleString()} Livi Points
+                      </span>
+                      <span className="text-[10px] text-slate-400 block font-medium">
+                        +${ev.usdValue.toFixed(2)} USD Commission
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* ========================================================
+          MODAL 2: APPROVAL DIALOG (Fixed Login ID, Password & Code Setup)
+         ======================================================== */}
+      {isApproveDialogOpen && appToApprove && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setIsApproveDialogOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3 shadow-xs shrink-0">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-base font-extrabold text-slate-900 text-center shrink-0">
+              Approve Partner Application
+            </h3>
+            <p className="text-xs text-slate-500 text-center mt-1 shrink-0">
+              Confirm partner referral code and portal login credentials for <strong>{appToApprove.businessName}</strong>.
+            </p>
+
+            <div className="space-y-4 my-5 overflow-y-auto pr-0.5">
+              {/* Partner Referral Code */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Assigned Partner Referral Code
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setAssignedCode(generateReferralCodeFor(appToApprove.businessName))}
+                    className="text-[10px] font-bold text-violet-700 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200 transition cursor-pointer flex items-center gap-1"
+                    title="Generate a unique partner code"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Auto-Generate</span>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={assignedCode}
+                  onChange={(e) => setAssignedCode(e.target.value.toUpperCase())}
+                  placeholder="LIVI-PARTNERCODE"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-violet-600 focus:ring-1 focus:ring-violet-600 uppercase"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Referral URL: https://livileads.com/ref/{assignedCode.toLowerCase()}
+                </span>
+              </div>
+
+              {/* Portal Login ID */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Portal Login ID / Email
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {assignedLoginId !== appToApprove.email && (
+                      <button
+                        type="button"
+                        onClick={() => setAssignedLoginId(appToApprove.email)}
+                        className="text-[10px] font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-md transition cursor-pointer"
+                        title="Reset to applicant's email"
+                      >
+                        Use Email
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setAssignedLoginId(generatePartnerLoginId(appToApprove.ownerName, appToApprove.email))}
+                      className="text-[10px] font-bold text-violet-700 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200 transition cursor-pointer flex items-center gap-1"
+                      title="Generate partner ID handle"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Auto-Generate</span>
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={assignedLoginId}
+                  onChange={(e) => setAssignedLoginId(e.target.value)}
+                  placeholder="partner@livileads.com or email"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+                />
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                  <span>Contact: <strong className="text-slate-600">{appToApprove.email}</strong></span>
+                  <span className="text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">Fixed for portal login</span>
+                </div>
+              </div>
+
+              {/* Portal Login Password */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Portal Login Temporary Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setAssignedPassword(generateRandomPassword())}
+                    className="text-[10px] font-bold text-violet-700 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200 transition cursor-pointer flex items-center gap-1"
+                    title="Generate secure temporary password"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Auto-Generate</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={assignedPassword}
+                    onChange={(e) => setAssignedPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  An onboarding email with these credentials will be dispatched to <strong>{appToApprove.email}</strong>.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 shrink-0 border-t border-slate-100 mt-2">
+              <button
+                type="button"
+                onClick={() => setIsApproveDialogOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmApproval}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirm & Activate</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 3: REJECT DIALOG
+         ======================================================== */}
+      {isRejectDialogOpen && appToReject && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setIsRejectDialogOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto mb-3 shadow-xs">
+              <XCircle className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-base font-extrabold text-slate-900 text-center">
+              Reject Application
+            </h3>
+            <p className="text-xs text-slate-500 text-center mt-1">
+              Please specify the reason for declining <strong>{appToReject.businessName}</strong>.
+            </p>
+
+            <div className="my-4 space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Rejection Reason
+                </label>
+                <select
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:outline-none focus:border-rose-500 cursor-pointer"
+                >
+                  <option value="Incomplete corporate verification document">
+                    Incomplete corporate verification document
+                  </option>
+                  <option value="Expired trade license or business registration">
+                    Expired trade license or business registration
+                  </option>
+                  <option value="Unverifiable company identity or contact info">
+                    Unverifiable company identity or contact info
+                  </option>
+                  <option value="Territory or sector duplicate partner">
+                    Territory or sector duplicate partner
+                  </option>
+                  <option value="Other compliance criteria">Other compliance criteria</option>
+                </select>
+              </div>
+
+              {/* Optional Text Field for Rejection Feedback */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Additional Explanation / Feedback
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                    Optional
+                  </span>
+                </div>
+                <textarea
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Enter specific notes or guidance for this applicant (optional)..."
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition resize-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  This optional note will be recorded in the applicant log.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsRejectDialogOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition cursor-pointer"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 4: DETAILED PARTNER ACTIVITY & REFERRED BUSINESSES
+         ======================================================== */}
+      {isPartnerDetailModalOpen && selectedPartner && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setIsPartnerDetailModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-7 border border-slate-200 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setIsPartnerDetailModalOpen(false)}
+              className="absolute right-4 top-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white flex items-center justify-center font-extrabold text-lg shadow-sm shrink-0">
+                {selectedPartner.businessName.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-lg font-extrabold text-slate-900">
+                    {selectedPartner.businessName}
+                  </h3>
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
+                    Official Partner ({selectedPartner.commissionRate}% Recurring)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Owner: <strong>{selectedPartner.ownerName}</strong> • {selectedPartner.email} • {selectedPartner.phone}
+                </p>
+              </div>
+            </div>
+
+            {/* Partner Statistics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 mb-6">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Total Referred
+                </span>
+                <span className="text-xl font-extrabold text-slate-900">
+                  {selectedPartner.totalReferredCount} Companies
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Active Paying
+                </span>
+                <span className="text-xl font-extrabold text-emerald-600">
+                  {selectedPartner.activePayingCount} Subscribed
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Lifetime Points
+                </span>
+                <span className="text-xl font-extrabold text-violet-700">
+                  {selectedPartner.totalLiviPoints.toLocaleString()} pts
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Total USD Earned
+                </span>
+                <span className="text-xl font-extrabold text-slate-900">
+                  ${selectedPartner.totalEarningsUSD.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Referred Client Organizations Breakdown */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-extrabold text-slate-900">
+                  Referred Client Organizations ({selectedPartner.referredBusinesses.length})
+                </h4>
+              </div>
+
+              {/* Referred Businesses Breakdown Table */}
+              {selectedPartner.referredBusinesses.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                  <Building className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600">No client referrals recorded yet.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    When client organizations subscribe using this partner&apos;s link, their activity will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-2.5 px-3.5">Company Name</th>
+                        <th className="py-2.5 px-3">Plan Tier</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3">Monthly Points</th>
+                        <th className="py-2.5 px-3.5 text-right">Joined Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedPartner.referredBusinesses.map((biz) => (
+                        <tr key={biz.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-3.5 font-bold text-slate-900">
+                            {biz.name}
+                            <span className="block text-[10px] text-slate-400 font-normal">
+                              {biz.ownerName} ({biz.email})
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-slate-700">
+                            {biz.plan}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                biz.status === "Active"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
+                              }`}
+                            >
+                              {biz.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-extrabold text-violet-700">
+                            +{biz.monthlyPointsEarned.toLocaleString()} pts
+                          </td>
+                          <td className="py-3 px-3.5 text-right text-slate-500 font-mono text-[11px]">
+                            {biz.joinedDate}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer with Referral link & Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="text-xs text-slate-600 flex items-center gap-2 w-full sm:w-auto">
+                <span className="font-bold">Referral Link:</span>
+                <span className="font-mono text-violet-700 bg-violet-50 px-2 py-1 rounded-md text-[11px] truncate max-w-xs">
+                  {selectedPartner.referralLink}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(selectedPartner.referralLink, selectedPartner.id)}
+                  className="p-1 text-slate-400 hover:text-violet-600 transition cursor-pointer"
+                  title="Copy link"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPartnerDetailModalOpen(false)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
+              >
+                Close Activity Overview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 5: FULL-SCREEN DOCUMENT VIEWER MODAL (Full Light Theme)
+         ======================================================== */}
+      {isDocViewerOpen && selectedApp && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-2 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setIsDocViewerOpen(false)}
+        >
+          <div
+            className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl h-[92vh] flex flex-col shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Viewer Header */}
+            <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-white text-slate-900 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-700 border border-violet-200 flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                    <span>{selectedApp.fileName}</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-bold">
+                      {selectedApp.documentType}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Applicant: <strong className="text-slate-700">{selectedApp.ownerName}</strong> ({selectedApp.businessName}) • Submitted{" "}
+                    {new Date(selectedApp.submittedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setDocViewerZoom(Math.max(50, docViewerZoom - 20))}
+                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-mono font-bold text-slate-800 px-1 min-w-[3rem] text-center">
+                    {docViewerZoom}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDocViewerZoom(Math.min(200, docViewerZoom + 20))}
+                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleDownloadDoc(selectedApp)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Download</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsDocViewerOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Viewer Body */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-100/70 flex items-center justify-center">
+              {selectedApp.fileDataUrl ? (
+                selectedApp.fileDataUrl.startsWith("data:application/pdf") ||
+                selectedApp.fileName.toLowerCase().endsWith(".pdf") ? (
+                  <iframe
+                    src={selectedApp.fileDataUrl}
+                    style={{ transform: `scale(${docViewerZoom / 100})`, transformOrigin: "top center" }}
+                    className="w-full h-full bg-white rounded-xl shadow-lg border border-slate-200 transition-transform duration-150"
+                    title="Document Full View"
+                  />
+                ) : selectedApp.fileDataUrl.startsWith("data:image/") ||
+                  /\.(jpe?g|png|webp|gif|svg)$/i.test(selectedApp.fileName) ? (
+                  <div className="overflow-auto max-h-full max-w-full flex items-center justify-center">
+                    <img
+                      src={selectedApp.fileDataUrl}
+                      alt={selectedApp.fileName}
+                      style={{ transform: `scale(${docViewerZoom / 100})`, transformOrigin: "center center" }}
+                      className="max-h-[80vh] object-contain rounded-xl shadow-lg border border-slate-200 transition-transform duration-150"
+                    />
+                  </div>
+                ) : (
+                  <div className="max-w-lg bg-white border border-slate-200 p-8 rounded-2xl text-center text-slate-800 shadow-md">
+                    <FileText className="w-12 h-12 text-violet-600 mx-auto mb-3" />
+                    <h4 className="text-base font-extrabold">{selectedApp.fileName}</h4>
+                    <p className="text-xs text-slate-500 mt-1 mb-4">
+                      File type requires native viewer or download.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDoc(selectedApp)}
+                      className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                    >
+                      <Download className="w-4 h-4" /> Download File to Inspect
+                    </button>
+                  </div>
+                )
+              ) : (
+                /* Full Compliance Document Certificate Sheet */
+                <div
+                  style={{ transform: `scale(${docViewerZoom / 100})`, transformOrigin: "top center" }}
+                  className="w-full max-w-2xl bg-white text-slate-900 rounded-2xl shadow-xl p-8 border border-slate-200 transition-transform duration-150"
+                >
+                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4 mb-6">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center font-black">
+                        L
+                      </div>
+                      <div>
+                        <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">
+                          LiviLeads Partner Compliance Registry
+                        </h2>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                          Official Legal Submission Audit
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px] uppercase border border-emerald-300">
+                        ✓ VERIFIED COMPLIANT
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 text-xs">
+                    <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Application ID
+                        </span>
+                        <span className="font-mono font-bold text-slate-800">{selectedApp.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Document Title
+                        </span>
+                        <span className="font-bold text-slate-800">{selectedApp.fileName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Partner Track
+                        </span>
+                        <span className="font-bold text-violet-700 capitalize">{selectedApp.track} Partner</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Document Classification
+                        </span>
+                        <span className="font-bold text-slate-800">{selectedApp.documentType}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-slate-200 space-y-2">
+                      <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
+                        Applicant Legal Identity Details
+                      </h4>
+                      <p className="text-slate-600 leading-relaxed">
+                        <strong>Entity / Business Name:</strong> {selectedApp.businessName}<br />
+                        <strong>Authorized Representative:</strong> {selectedApp.ownerName}<br />
+                        <strong>Email Address:</strong> {selectedApp.email}<br />
+                        <strong>Contact Phone:</strong> {selectedApp.phone}<br />
+                        <strong>Industry / Category:</strong> {selectedApp.category}<br />
+                        {selectedApp.address && <><strong>Registered Address:</strong> {selectedApp.address}<br /></>}
+                        <strong>Submission Date:</strong> {new Date(selectedApp.submittedAt).toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                      <p className="text-[11px] leading-relaxed">
+                        <strong>Compliance Notice:</strong> This legal document was submitted by the applicant via encrypted upload. The compliance verification confirms the applicant identity and business eligibility for the LiviLeads Partner Revenue Share Network.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 pt-4 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="font-mono">Security Checksum: SHA256-OK-VERIFIED</span>
+                    <span>LiviLeads Partner Onboarding & Compliance</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 6: PARTNER WELCOME & CREDENTIALS EMAIL DISPATCHED
+         ======================================================== */}
+      {isEmailModalOpen && approvedEmailData && (
+        <div
+          className="fixed inset-0 z-[70] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setIsEmailModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Fake Email Client Top Bar */}
+            <div className="px-5 py-3 bg-slate-100 border-b border-slate-200 text-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-rose-400 inline-block"></span>
+                <span className="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>
+                <span className="w-3 h-3 rounded-full bg-emerald-400 inline-block"></span>
+                <span className="text-xs font-bold text-slate-700 ml-2">
+                  System Notification • Automated Onboarding Email Dispatched
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEmailModalOpen(false)}
+                className="w-7 h-7 rounded-full bg-white hover:bg-slate-200 text-slate-500 hover:text-slate-800 border border-slate-200 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Email Metadata Header */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 text-xs space-y-1.5 shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px] mr-2">
+                    Subject:
+                  </span>
+                  <span className="font-extrabold text-slate-900 text-sm">
+                    🎉 Welcome to LiviLeads Partner Program — Your Portal Access is Ready!
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Dispatched Successfully
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-600 text-xs pt-1">
+                <div>
+                  <strong className="text-slate-800">From:</strong> partners@livileads.com (LiviLeads Partner Team)
+                </div>
+                <div>
+                  <strong className="text-slate-800">To:</strong> {approvedEmailData.toEmail}
+                </div>
+                <div>
+                  <strong className="text-slate-800">Time:</strong> {approvedEmailData.sentAt}
+                </div>
+              </div>
+            </div>
+
+            {/* Email Body Content */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-5 text-slate-800">
+              {/* Brand Banner */}
+              <div className="bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-700 rounded-2xl p-5 text-white flex items-center justify-between shadow-md">
+                <div>
+                  <span className="text-[10px] font-extrabold tracking-widest uppercase bg-white/20 px-2 py-0.5 rounded-full">
+                    Official Welcome
+                  </span>
+                  <h3 className="text-lg font-black mt-1">LiviLeads Partner Network</h3>
+                  <p className="text-xs text-violet-100 mt-0.5">
+                    Your application has been approved and your partner portal account is activated!
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-xs flex items-center justify-center text-white shrink-0">
+                  <Award className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Greeting */}
+              <div className="space-y-2 text-xs sm:text-sm leading-relaxed">
+                <p>
+                  Dear <strong>{approvedEmailData.ownerName}</strong>,
+                </p>
+                <p>
+                  Congratulations! We are thrilled to inform you that your application for{" "}
+                  <strong>{approvedEmailData.businessName}</strong> has been officially approved. You are now an active{" "}
+                  <strong>Official Partner</strong> with an exclusive{" "}
+                  <strong>{approvedEmailData.commissionRate}% recurring commission</strong> on all client subscriptions you introduce.
+                </p>
+              </div>
+
+              {/* Credentials & Access Card */}
+              <div className="bg-slate-50 border-2 border-violet-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-violet-900 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-violet-600" />
+                    <span>Your Partner Portal Login Credentials</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">Keep confidential</span>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Partner Portal Login Email / ID
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm select-all">
+                      {approvedEmailData.loginEmail}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Temporary Password
+                    </span>
+                    <span className="font-mono font-bold text-violet-700 text-xs sm:text-sm select-all">
+                      {approvedEmailData.loginPassword}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Assigned Referral Code
+                    </span>
+                    <span className="font-mono font-black text-slate-900 text-xs sm:text-sm select-all">
+                      {approvedEmailData.referralCode}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Commission Rate
+                    </span>
+                    <span className="font-bold text-emerald-700 text-xs sm:text-sm">
+                      {approvedEmailData.commissionRate}% Recurring Rewards
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-2 bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Your Unique Referral Link
+                    </span>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="font-mono text-xs text-violet-700 truncate select-all">
+                        {approvedEmailData.referralLink}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(approvedEmailData.referralLink, "email_ref_link")}
+                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-violet-100 text-slate-600 hover:text-violet-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* What Partner Can Do inside the Portal */}
+              <div className="bg-violet-50/70 border border-violet-100 rounded-2xl p-4 text-xs space-y-2">
+                <span className="font-bold text-violet-950 block">What you can do in your Partner Portal:</span>
+                <ul className="space-y-1.5 text-violet-900 list-disc list-inside">
+                  <li><strong>Partner Dashboard:</strong> Track referred businesses, monthly subscriptions, and active deals.</li>
+                  <li><strong>Referral Tools:</strong> Copy your referral link, referral code, or download your unique partner QR code.</li>
+                  <li><strong>Livi Points & Redemption:</strong> Manage earned points and redeem directly for cash via Bank Wire Transfer, UPI, or PayPal.</li>
+                  <li><strong>Profile & Payout Setup:</strong> Configure your payout details, bank account, and partner settings.</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Email Footer & Direct Portal Login Action */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const creds = `LiviLeads Partner Login\nEmail: ${approvedEmailData.loginEmail}\nPassword: ${approvedEmailData.loginPassword}\nReferral Code: ${approvedEmailData.referralCode}\nReferral Link: ${approvedEmailData.referralLink}\nLogin URL: http://localhost:3000${approvedEmailData.loginUrl}`;
+                  copyToClipboard(creds, "creds_all");
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Credentials</span>
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsEmailModalOpen(false)}
+                  className="w-1/2 sm:w-auto px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer"
+                >
+                  Close Notification
+                </button>
+
+                <Link
+                  href={approvedEmailData.loginUrl}
+                  target="_blank"
+                  className="w-1/2 sm:w-auto px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md hover:shadow-violet-600/20 transition flex items-center justify-center gap-1.5"
+                >
+                  <span>Open Portal Login →</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
