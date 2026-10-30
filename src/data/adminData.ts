@@ -20,16 +20,32 @@ export interface PartnerApplication {
   assignedPassword?: string;
 }
 
+export type ReferralStatus =
+  | "Active"
+  | "Renewal Pending"
+  | "14-Day Free Trial"
+  | "Signed Up"
+  | "Invited"
+  | "Imported"
+  | "Cancelled";
+
 export interface ReferredBusiness {
   id: string;
   name: string;
   ownerName: string;
   email: string;
+  phone?: string;
   plan: string;
-  status: "Active" | "14-Day Free Trial" | "Cancelled";
+  status: ReferralStatus;
   monthlyValueUSD: number;
   monthlyPointsEarned: number;
   joinedDate: string;
+  renewalDueDate?: string;
+  source?: "Direct Referral" | "Manual Client" | "Excel Bulk Import";
+  notes?: string;
+  inviteCount?: number;
+  lastInvitedDate?: string;
+  lastRemindedDate?: string;
 }
 
 export interface ApprovedPartner {
@@ -79,6 +95,18 @@ export interface PointsRedemption {
   referenceId: string;
 }
 
+export interface ExistingClient {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  companyName?: string;
+  status: "Imported" | "Invited" | "Active" | "Contacted";
+  addedDate: string;
+  source: "Manual" | "Excel Bulk Import";
+  notes?: string;
+}
+
 export interface PartnerAccount {
   id: string;
   applicationId?: string;
@@ -103,6 +131,7 @@ export interface PartnerAccount {
   payoutDetails: PayoutDetails;
   referredBusinesses: ReferredBusiness[];
   redemptions: PointsRedemption[];
+  existingClients?: ExistingClient[];
 }
 
 export interface ReferralActivityEvent {

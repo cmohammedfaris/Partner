@@ -34,6 +34,7 @@ import {
   Calendar,
   Lock,
   ShieldCheck,
+  Info,
 } from "lucide-react";
 import { PartnerAccount, ApprovedPartner } from "@/data/adminData";
 
@@ -810,6 +811,10 @@ function ApplyFormContent() {
                               className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 transition"
                             />
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5 text-[#6560F0] shrink-0" />
+                            <span>Name should match your official bank account name for payouts.</span>
+                          </p>
                         </div>
 
                         <CountryPhoneInput
@@ -969,6 +974,10 @@ function ApplyFormContent() {
                               className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 transition"
                             />
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5 text-[#6560F0] shrink-0" />
+                            <span>Business name should match your official bank account name for payouts.</span>
+                          </p>
                         </div>
 
                         <div>
@@ -988,6 +997,10 @@ function ApplyFormContent() {
                               className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 transition"
                             />
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Name should match authorized signatory or banking records.</span>
+                          </p>
                         </div>
                       </div>
 
